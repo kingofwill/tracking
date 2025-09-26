@@ -2,21 +2,25 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Realtime Location Tracking</title>
+  <title>Realtime Location Tracking with Routing</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
   <style>
-    #map { height: 90vh; width: 100%; }
+    #map { height: 85vh; width: 100%; }
     #controls { padding: 10px; }
+    button { margin-left: 5px; }
   </style>
 </head>
 <body>
   <div id="controls">
     <input id="room" placeholder="Enter Room ID" />
     <button onclick="joinRoom()">Join</button>
+    <button onclick="toggleRoute()">Chỉ đường</button>
   </div>
   <div id="map"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
@@ -43,6 +47,9 @@
     let roomId = null;
     let myId = Math.random().toString(36).substring(2, 9);
     let markers = {};
+    let routingControl = null;
+    let latestData = {};
+    let routeVisible = false;
 
     // Icon cho mình
     const myIcon = L.icon({
@@ -60,6 +67,38 @@
       popupAnchor: [0, -40]
     });
 
+    function showRoute(myLat, myLon, friendLat, friendLon) {
+      if (routingControl) {
+        map.removeControl(routingControl);
+      }
+      routingControl = L.Routing.control({
+        waypoints: [
+          L.latLng(myLat, myLon),
+          L.latLng(friendLat, friendLon)
+        ],
+        routeWhileDragging: false
+      }).addTo(map);
+    }
+
+    function toggleRoute() {
+      routeVisible = !routeVisible;
+      if (!routeVisible) {
+        if (routingControl) {
+          map.removeControl(routingControl);
+          routingControl = null;
+        }
+        return;
+      }
+      if (latestData[myId]) {
+        for (let deviceId in latestData) {
+          if (deviceId !== myId) {
+            showRoute(latestData[myId].lat, latestData[myId].lon, latestData[deviceId].lat, latestData[deviceId].lon);
+            break;
+          }
+        }
+      }
+    }
+
     function joinRoom() {
       roomId = document.getElementById('room').value;
       if (!roomId) return alert("Enter a room ID");
@@ -68,6 +107,7 @@
       onValue(ref(db, 'rooms/' + roomId), snapshot => {
         const data = snapshot.val();
         if (!data) return;
+        latestData = data;
 
         for (let deviceId in data) {
           const { lat, lon } = data[deviceId];
@@ -83,6 +123,8 @@
             }
           }
         }
+
+        if (routeVisible) toggleRoute();
       });
 
       // Cập nhật vị trí bản thân
@@ -98,6 +140,7 @@
     }
 
     window.joinRoom = joinRoom;
+    window.toggleRoute = toggleRoute;
   </script>
 </body>
 </html>
