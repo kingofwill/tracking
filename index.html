@@ -7,7 +7,7 @@
   <style>
     body, html { margin:0; padding:0; height:100%; font-family:sans-serif; }
     #controls { padding:10px; background:#f9f9f9; display:flex; gap:5px; flex-wrap:wrap; }
-    #controls input { flex:1; padding:8px; font-size:16px; }
+    #controls input, #controls select { flex:1; padding:8px; font-size:16px; }
     #controls button { padding:8px 12px; font-size:16px; }
     #map { height: calc(100% - 60px); width: 100%; }
   </style>
@@ -17,6 +17,9 @@
     <input id="room" placeholder="Enter Room ID"/>
     <input id="deviceName" placeholder="Your Name"/>
     <button onclick="joinRoom()">Join</button>
+    <select id="friendSelect">
+      <option value="">-- chọn bạn để chỉ đường --</option>
+    </select>
     <button onclick="toggleRoute()">Chỉ đường</button>
   </div>
   <div id="map"></div>
@@ -82,6 +85,10 @@
         latestData = data;
         const now = Date.now();
 
+        // cập nhật danh sách bạn bè
+        const select = document.getElementById("friendSelect");
+        select.innerHTML = '<option value="">-- chọn bạn để chỉ đường --</option>';
+
         for (let deviceId in data) {
           const { lat, lon, name, lastActive } = data[deviceId] || {};
           if (!name || !lat || !lon) continue;
@@ -110,6 +117,14 @@
                 : "http://maps.google.com/mapfiles/ms/icons/green-dot.png"
             });
           }
+
+          // Thêm vào dropdown nếu không phải mình
+          if (deviceId !== myId) {
+            const opt = document.createElement("option");
+            opt.value = deviceId;
+            opt.textContent = name;
+            select.appendChild(opt);
+          }
         }
       });
     }
@@ -120,11 +135,11 @@
         routeVisible = false;
       } else {
         if (!roomId) return alert("Join a room first");
-        const friends = Object.keys(latestData).filter(id => id !== myId);
-        if (friends.length === 0) return alert("No friend found");
+        const friendId = document.getElementById("friendSelect").value;
+        if (!friendId) return alert("Chọn bạn để chỉ đường");
 
         const me = latestData[myId];
-        const friend = latestData[friends[0]];
+        const friend = latestData[friendId];
         if (!me || !friend) return;
 
         const request = {
