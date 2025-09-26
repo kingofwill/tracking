@@ -23,7 +23,6 @@ button { cursor:pointer; }
 <body>
 
 <div id="controls">
-  <input type="text" id="roomId" placeholder="Room ID">
   <input type="text" id="deviceName" placeholder="Tên thiết bị">
   <button onclick="join()">Join</button>
   <br>
@@ -50,34 +49,35 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// Map VN OSM
+// Map chuẩn OSM
 const map = L.map('map').setView([16.0471,108.2068],6);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '' }).addTo(map);
 
-let roomId, myName, deviceId;
+let myName, deviceId, userRef;
 let myMarker;
 let markers = {};
 let routeLine;
 let currentFriend = null;
-let userRef = null;
+const roomId = 'default-room';
 
 // Join room
 function join(){
-  roomId = document.getElementById('roomId').value.trim();
   myName = document.getElementById('deviceName').value.trim();
-  if(!roomId||!myName){ alert("Nhập Room ID và Tên thiết bị!"); return; }
+  if(!myName){ alert("Nhập tên thiết bị!"); return; }
 
-  // Tạo key duy nhất cho thiết bị
-  deviceId = db.ref('rooms/'+roomId).push().key;
-  userRef = db.ref('rooms/'+roomId+'/'+deviceId);
+  // deviceId duy nhất trên client
+  deviceId = 'device_' + Math.random().toString(36).substr(2,9);
+  userRef = db.ref(`rooms/${roomId}/${deviceId}`);
 
-  // Thu nhỏ form tự động
+  // Thiết lập xóa tự động khi mất kết nối
+  userRef.onDisconnect().remove();
+
   document.getElementById('controls').classList.add('minimized');
 
-  // Cập nhật vị trí liên tục
   if(navigator.geolocation){
     navigator.geolocation.watchPosition(pos=>{
-      const lat = pos.coords.latitude, lng=pos.coords.longitude;
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
       userRef.set({name:myName,lat,lng,timestamp:Date.now()});
 
       if(!myMarker){
@@ -89,34 +89,39 @@ function join(){
 
       map.setView([lat,lng]);
       if(currentFriend) showRouteToMarker(currentFriend);
+
     }, err=>console.error(err), {enableHighAccuracy:true});
   }
 
-  // Lắng nghe tất cả devices
-  db.ref('rooms/'+roomId).on('value', snap=>{
+  // Lắng nghe tất cả thiết bị
+  db.ref(`rooms/${roomId}`).on('value', snap=>{
     const devices = snap.val()||{};
     updateMarkers(devices);
   });
-
-  window.addEventListener('beforeunload', ()=>{ if(userRef) userRef.remove(); });
 }
 
 // Cập nhật marker
 function updateMarkers(devices){
-  // Xóa marker không còn
+  // Xóa marker không còn trong DB
   for(const id in markers){
-    map.removeLayer(markers[id]);
+    if(!devices[id]){
+      map.removeLayer(markers[id]);
+      delete markers[id];
+    }
   }
-  markers={};
 
   for(const id in devices){
     const {name,lat,lng}=devices[id];
     if(!lat||!lng) continue;
     if(id===deviceId) continue;
 
-    const m = L.marker([lat,lng],{title:name}).addTo(map).bindPopup(name);
-    m.on('click', ()=>{ currentFriend=m; showRouteToMarker(m); });
-    markers[id] = m;
+    if(!markers[id]){
+      const m = L.marker([lat,lng],{title:name}).addTo(map).bindPopup(name);
+      m.on('click', ()=>{ currentFriend=m; showRouteToMarker(m); });
+      markers[id] = m;
+    } else {
+      markers[id].setLatLng([lat,lng]);
+    }
   }
 }
 
