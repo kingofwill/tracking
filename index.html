@@ -86,13 +86,6 @@ function join(){
       } else {
         myMarker.setLatLng([lat,lng]);
       }
-
-      // Cập nhật tuyến đường mỗi 3 giây
-      if(currentFriend && Date.now() - lastRouteUpdate > ROUTE_UPDATE_INTERVAL){
-        showRouteToMarker(currentFriend);
-        lastRouteUpdate = Date.now();
-      }
-
     }, err=>console.error(err), {enableHighAccuracy:true});
   }
 
@@ -160,3 +153,4 @@ function cancelRoute(){
 </script>
 </body>
 </html>
+
