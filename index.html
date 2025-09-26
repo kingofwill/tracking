@@ -2,18 +2,46 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Realtime Location Tracking with Routing</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
   <style>
-    #map { height: 85vh; width: 100%; }
-    #controls { padding: 10px; }
-    button { margin-left: 5px; }
+    body, html { margin: 0; padding: 0; height: 100%; width: 100%; }
+    #map { height: calc(100% - 60px); width: 100%; }
+    #controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px;
+      background: #f9f9f9;
+      border-bottom: 1px solid #ccc;
+    }
+    #controls input {
+      flex: 1;
+      padding: 8px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    #controls button {
+      padding: 8px 12px;
+      margin-left: 6px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      background: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+    #controls button:active {
+      background: #0056b3;
+    }
   </style>
 </head>
 <body>
   <div id="controls">
-    <input id="room" placeholder="Enter Room ID" />
+    <input id="room" placeholder="Room ID" />
     <button onclick="joinRoom()">Join</button>
     <button onclick="toggleRoute()">Chỉ đường</button>
   </div>
@@ -78,7 +106,7 @@
         ],
         routeWhileDragging: false,
         router: new L.Routing.OSRMv1({
-        serviceUrl: 'https://router.project-osrm.org/route/v1'
+          serviceUrl: 'https://router.project-osrm.org/route/v1'
         })
       }).addTo(map);
     }
@@ -147,4 +175,3 @@
   </script>
 </body>
 </html>
-
