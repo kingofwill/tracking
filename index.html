@@ -3,9 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tracking Demo</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css"/>
+  <title>Tracking Demo (Google Maps)</title>
   <style>
     body, html { margin:0; padding:0; height:100%; font-family:sans-serif; }
     #controls { padding:10px; background:#f9f9f9; display:flex; gap:5px; flex-wrap:wrap; }
@@ -23,9 +21,7 @@
   </div>
   <div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
-
+  <!-- Firebase -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getDatabase, ref, set, onValue, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
@@ -44,62 +40,56 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    let map = L.map('map').setView([16.0471, 108.2068], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(map);
-
-    const myIcon = L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/64/64113.png", iconSize: [32,32] });
-    const otherIcon = L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/149/149059.png", iconSize: [32,32] });
-
+    let map, directionsService, directionsRenderer;
     let myId = "device-" + Math.random().toString(36).substr(2,9);
     let myName = "";
     let roomId = null;
     let markers = {};
-    let routeControl = null;
-    let routeVisible = false;
     let latestData = {};
+    let routeVisible = false;
 
-    function joinRoom() {
+    // Khởi tạo Google Maps
+    window.initMap = function () {
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 16.0471, lng: 108.2068 },
+        zoom: 13,
+      });
+      directionsService = new google.maps.DirectionsService();
+      directionsRenderer = new google.maps.DirectionsRenderer({ suppressMarkers: true });
+      directionsRenderer.setMap(map);
+    }
+
+    window.joinRoom = function () {
       roomId = document.getElementById('room').value;
       myName = document.getElementById('deviceName').value || "Unknown";
       if (!roomId) return alert("Enter a room ID");
 
       const myRef = ref(db, 'rooms/' + roomId + '/' + myId);
-
-      // Ghi dữ liệu ngay khi join để đảm bảo có name
       set(myRef, { lat: 0, lon: 0, name: myName, lastActive: Date.now() });
-
-      // Xóa node khi disconnect
       onDisconnect(myRef).remove();
 
-      // Cập nhật vị trí liên tục
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(pos => {
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
           set(myRef, { lat, lon, name: myName, lastActive: Date.now() });
         });
-      } else {
-        alert("Geolocation not supported");
       }
 
-      // Nghe dữ liệu phòng
       onValue(ref(db, 'rooms/' + roomId), snapshot => {
         const data = snapshot.val();
         if (!data) return;
         latestData = data;
         const now = Date.now();
 
-        // Xử lý từng thiết bị
         for (let deviceId in data) {
           const { lat, lon, name, lastActive } = data[deviceId] || {};
-          if (!name) continue; // bỏ nếu không có tên
-          if (!lat || !lon) continue;
+          if (!name || !lat || !lon) continue;
 
-          // Nếu offline >30s → xoá khỏi DB & map
           if (now - lastActive > 30000) {
             remove(ref(db, 'rooms/' + roomId + '/' + deviceId));
             if (markers[deviceId]) {
-              map.removeLayer(markers[deviceId]);
+              markers[deviceId].setMap(null);
               delete markers[deviceId];
             }
             continue;
@@ -108,24 +98,28 @@
           const label = deviceId === myId ? `You (${name})` : `Friend (${name})`;
 
           if (markers[deviceId]) {
-            markers[deviceId].setLatLng([lat, lon]).bindPopup(label);
+            markers[deviceId].setPosition({ lat, lng: lon });
+            markers[deviceId].setTitle(label);
           } else {
-            markers[deviceId] = L.marker([lat, lon], { icon: deviceId === myId ? myIcon : otherIcon })
-              .addTo(map)
-              .bindPopup(label);
+            markers[deviceId] = new google.maps.Marker({
+              position: { lat, lng: lon },
+              map,
+              title: label,
+              icon: deviceId === myId
+                ? "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+                : "http://maps.google.com/mapfiles/ms/icons/green-dot.png"
+            });
           }
         }
       });
     }
 
-    function toggleRoute() {
-      if (routeControl) {
-        map.removeControl(routeControl);
-        routeControl = null;
+    window.toggleRoute = function () {
+      if (routeVisible) {
+        directionsRenderer.set('directions', null);
         routeVisible = false;
       } else {
         if (!roomId) return alert("Join a room first");
-
         const friends = Object.keys(latestData).filter(id => id !== myId);
         if (friends.length === 0) return alert("No friend found");
 
@@ -133,24 +127,23 @@
         const friend = latestData[friends[0]];
         if (!me || !friend) return;
 
-        routeControl = L.Routing.control({
-          waypoints: [
-            L.latLng(me.lat, me.lon),
-            L.latLng(friend.lat, friend.lon)
-          ],
-          routeWhileDragging: true,
-          show: false,
-          addWaypoints: false,
-          createMarker: () => null,
-          router: L.Routing.osrmv1({ serviceUrl: "https://router.project-osrm.org/route/v1" })
-        }).addTo(map);
+        const request = {
+          origin: { lat: me.lat, lng: me.lon },
+          destination: { lat: friend.lat, lng: friend.lon },
+          travelMode: 'DRIVING'
+        };
 
-        routeVisible = true;
+        directionsService.route(request, (result, status) => {
+          if (status === 'OK') {
+            directionsRenderer.setDirections(result);
+            routeVisible = true;
+          }
+        });
       }
     }
-
-    window.joinRoom = joinRoom;
-    window.toggleRoute = toggleRoute;
   </script>
+
+  <!-- Google Maps JS API (thay YOUR_API_KEY bằng key của bạn) -->
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDUn14JJgslNJ7dQykUVvbgvlNTs7ynCkc&callback=initMap"></script>
 </body>
 </html>
