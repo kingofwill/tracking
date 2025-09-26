@@ -13,7 +13,7 @@ body, html { margin:0; padding:0; height:100%; font-family:sans-serif; }
   background:white; padding:10px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.3);
   z-index:9999; text-align:center;
 }
-input, select, button {
+input, button {
   margin:4px; padding:10px; font-size:16px; border-radius:6px; border:1px solid #ccc;
 }
 button { cursor:pointer; }
@@ -29,8 +29,6 @@ button { cursor:pointer; }
   <input type="text" id="deviceName" placeholder="Tên thiết bị">
   <button onclick="join()">Join</button>
   <br>
-  <select id="friendSelect"></select>
-  <button onclick="showRoute()">Chỉ đường</button>
   <button id="cancelBtn" onclick="cancelRoute()">Hủy chỉ đường</button>
 </div>
 
@@ -103,39 +101,33 @@ function join() {
 
 // Cập nhật marker
 function updateMarkers(devices){
-  const friendSelect = document.getElementById('friendSelect');
-  friendSelect.innerHTML="<option value=''>--Chọn bạn--</option>";
+  // Xóa marker cũ
+  for(const id in markers){
+    map.removeLayer(markers[id]);
+  }
+  markers = {};
 
   for(const id in devices){
     const {name,lat,lng}=devices[id];
     if(!lat||!lng) continue;
     if(id===myId) continue;
 
-    if(!markers[id]){
-      markers[id] = L.marker([lat,lng],{title:name})
-                     .addTo(map).bindPopup(name);
-    }else{
-      markers[id].setLatLng([lat,lng]);
-    }
-    friendSelect.innerHTML+=`<option value="${id}">${name}</option>`;
-  }
+    const m = L.marker([lat,lng],{title:name})
+                .addTo(map)
+                .bindPopup(name);
 
-  // Xóa marker không còn trong DB
-  for(const id in markers){
-    if(!devices[id]){
-      map.removeLayer(markers[id]);
-      delete markers[id];
-    }
+    // Bấm vào marker để chỉ đường
+    m.on('click',()=>{ showRouteToMarker(m); });
+    markers[id] = m;
   }
 }
 
-// Vẽ tuyến đường dùng OSRM
-function showRoute(){
-  const friendId = document.getElementById('friendSelect').value;
-  if(!friendId||!markers[friendId]||!myMarker){ alert("Chọn bạn để chỉ đường"); return; }
+// Vẽ tuyến đường đến marker
+function showRouteToMarker(friendMarker){
+  if(!myMarker) return alert("Chưa xác định vị trí của bạn!");
 
   const from = myMarker.getLatLng();
-  const to = markers[friendId].getLatLng();
+  const to = friendMarker.getLatLng();
 
   if(routeLine) map.removeLayer(routeLine);
 
