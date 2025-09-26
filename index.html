@@ -1,202 +1,103 @@
-<!doctype html>
-<html lang="vi">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Realtime 2-device Location Tracker</title>
-  <!-- Leaflet CSS -->
-  <!-- Đúng, không có integrity -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <meta charset="utf-8">
+  <title>Realtime Location Tracking</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html,body,#map { height: 100%; margin: 0; padding: 0; }
-    #controls { position: absolute; top: 8px; left: 8px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 8px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
-    label,input,button { display:block; margin:6px 0; }
-    small { color:#666 }
+    #map { height: 90vh; width: 100%; }
+    #controls { padding: 10px; }
   </style>
 </head>
 <body>
-<div id="controls">
-  <strong>Realtime 2-device Tracker</strong>
-  <label>Room ID <input id="room" placeholder="e.g. room123"/></label>
-  <label>Your name <input id="name" placeholder="Device A"/></label>
-  <button id="join">Join Room</button>
-  <button id="leave" disabled>Leave Room</button>
-  <hr/>
-  <label><input type="checkbox" id="share" checked/> Share my location</label>
-  <small>Open the same Room ID on another device (phone/computer) to see each other.</small>
-</div>
+  <div id="controls">
+    <input id="room" placeholder="Enter Room ID" />
+    <button onclick="joinRoom()">Join</button>
+  </div>
+  <div id="map"></div>
 
-<div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-<!-- Leaflet JS -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o9N1j7k3b2b8gS2h2mD3jYb0NfQb3s1rGk2Gk0b0C2E=" crossorigin=""></script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCn1K76GDbRiXN6_n3yNBgzvb6taUXGOVM",
+      authDomain: "tracking-bb8db.firebaseapp.com",
+      databaseURL: "https://tracking-bb8db-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "tracking-bb8db",
+      storageBucket: "tracking-bb8db.firebasestorage.app",
+      messagingSenderId: "376993985667",
+      appId: "1:376993985667:web:bb7dfb60f76c9ba5f8d7b6",
+      measurementId: "G-DLP0C73TCP"
+    };
 
-<!-- Firebase v9 modular SDK -->
-<script type="module">
-  import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js';
-  import { getDatabase, ref, set, onChildAdded, onChildChanged, onChildRemoved, remove } from 'https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js';
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
 
-  // Firebase config (đã điền sẵn)
-  const firebaseConfig = {
-    apiKey: "AIzaSyCn1K76GDbRiXN6_n3yNBgzvb6taUXGOVM",
-    authDomain: "tracking-bb8db.firebaseapp.com",
-    databaseURL: "https://tracking-bb8db-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "tracking-bb8db",
-    storageBucket: "tracking-bb8db.firebasestorage.app",
-    messagingSenderId: "376993985667",
-    appId: "1:376993985667:web:bb7dfb60f76c9ba5f8d7b6",
-    measurementId: "G-DLP0C73TCP"
-  };
+    let map = L.map('map').setView([0, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
 
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
+    let roomId = null;
+    let myId = Math.random().toString(36).substring(2, 9);
+    let markers = {};
 
-  // Setup map
-  const map = L.map('map').setView([16.047079, 108.206230], 5); // default center Vietnam
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '© OpenStreetMap'
-  }).addTo(map);
-
-  let markers = {}; // clientId -> marker
-
-  // UI elements
-  const roomEl = document.getElementById('room');
-  const nameEl = document.getElementById('name');
-  const joinBtn = document.getElementById('join');
-  const leaveBtn = document.getElementById('leave');
-  const shareChk = document.getElementById('share');
-
-  // Client identity
-  const clientId = Math.random().toString(36).slice(2,9);
-  let clientName = 'Me';
-  let roomId = null;
-  let watchId = null;
-
-  function joinRoom(){
-    roomId = roomEl.value.trim();
-    clientName = (nameEl.value.trim() || ('User-' + clientId));
-    if(!roomId){ alert('Nhập Room ID'); return; }
-
-    joinBtn.disabled = true;
-    leaveBtn.disabled = false;
-    roomEl.disabled = true;
-    nameEl.disabled = true;
-
-    const roomRef = ref(db, 'rooms/' + roomId + '/clients/' + clientId);
-
-    // write presence info (initial)
-    set(roomRef, {
-      name: clientName,
-      lat: null,
-      lng: null,
-      ts: Date.now()
+    // Icon cho mình
+    const myIcon = L.icon({
+      iconUrl: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
+      iconSize: [40, 40],
+      iconAnchor: [20, 40],
+      popupAnchor: [0, -40]
     });
 
-    // listen to all clients in room
-    const clientsRef = ref(db, 'rooms/' + roomId + '/clients');
-
-    onChildAdded(clientsRef, (snap) => {
-      const id = snap.key;
-      const data = snap.val();
-      if(!data) return;
-      addOrUpdateMarker(id, data);
-    });
-    onChildChanged(clientsRef, (snap) => {
-      const id = snap.key;
-      const data = snap.val();
-      if(!data) return;
-      addOrUpdateMarker(id, data);
-    });
-    onChildRemoved(clientsRef, (snap) => {
-      const id = snap.key;
-      removeMarker(id);
+    // Icon cho người khác
+    const otherIcon = L.icon({
+      iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
+      iconSize: [40, 40],
+      iconAnchor: [20, 40],
+      popupAnchor: [0, -40]
     });
 
-    if (shareChk.checked) startSharing();
-  }
+    function joinRoom() {
+      roomId = document.getElementById('room').value;
+      if (!roomId) return alert("Enter a room ID");
 
-  function leaveRoom(){
-    if(!roomId) return;
-    stopSharing();
+      // Lắng nghe dữ liệu từ Firebase
+      onValue(ref(db, 'rooms/' + roomId), snapshot => {
+        const data = snapshot.val();
+        if (!data) return;
 
-    const roomRef = ref(db, 'rooms/' + roomId + '/clients/' + clientId);
-    remove(roomRef).catch(()=>{});
+        for (let deviceId in data) {
+          const { lat, lon } = data[deviceId];
+          if (!lat || !lon) continue;
 
-    for(const k in markers){
-      map.removeLayer(markers[k]);
-    }
-    markers = {};
+          if (markers[deviceId]) {
+            markers[deviceId].setLatLng([lat, lon]);
+          } else {
+            if (deviceId === myId) {
+              markers[deviceId] = L.marker([lat, lon], { icon: myIcon }).addTo(map).bindPopup("You");
+            } else {
+              markers[deviceId] = L.marker([lat, lon], { icon: otherIcon }).addTo(map).bindPopup("Friend");
+            }
+          }
+        }
+      });
 
-    joinBtn.disabled = false;
-    leaveBtn.disabled = true;
-    roomEl.disabled = false;
-    nameEl.disabled = false;
-    roomId = null;
-  }
-
-  function startSharing(){
-    if(!navigator.geolocation){ alert('Geolocation không được hỗ trợ trên trình duyệt này.'); return; }
-    if(watchId) return;
-
-    watchId = navigator.geolocation.watchPosition((pos)=>{
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const ts = pos.timestamp;
-
-      if(roomId){
-        const myRef = ref(db, 'rooms/' + roomId + '/clients/' + clientId);
-        set(myRef, { name: clientName, lat, lng, ts });
+      // Cập nhật vị trí bản thân
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(pos => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          set(ref(db, 'rooms/' + roomId + '/' + myId), { lat, lon });
+        });
+      } else {
+        alert("Geolocation not supported");
       }
-
-      addOrUpdateMarker(clientId, { name: clientName, lat, lng, ts });
-
-    }, (err)=>{
-      console.error('Geo error', err);
-      alert('Không thể lấy vị trí: ' + err.message);
-    }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 });
-  }
-
-  function stopSharing(){
-    if(watchId){ navigator.geolocation.clearWatch(watchId); watchId = null; }
-  }
-
-  function addOrUpdateMarker(id, data){
-    if(!data || data.lat == null || data.lng == null) return;
-    if(markers[id]){
-      markers[id].setLatLng([data.lat, data.lng]);
-      markers[id].bindPopup(`${data.name} <br/><small>${new Date(data.ts).toLocaleTimeString()}</small>`);
-    } else {
-      const m = L.marker([data.lat, data.lng]).addTo(map);
-      m.bindPopup(`${data.name} <br/><small>${new Date(data.ts).toLocaleTimeString()}</small>`);
-      markers[id] = m;
     }
 
-    if(id === clientId){
-      markers[id].bindPopup(`<b>${data.name} (You)</b><br/><small>${new Date(data.ts).toLocaleTimeString()}</small>`);
-      map.setView([data.lat, data.lng], 15);
-    }
-  }
-
-  function removeMarker(id){
-    if(markers[id]){ map.removeLayer(markers[id]); delete markers[id]; }
-  }
-
-  joinBtn.addEventListener('click', ()=>{ joinRoom(); });
-  leaveBtn.addEventListener('click', ()=>{ leaveRoom(); });
-
-  shareChk.addEventListener('change', ()=>{
-    if(shareChk.checked){ startSharing(); } else { stopSharing(); }
-  });
-
-  window.addEventListener('beforeunload', ()=>{
-    if(roomId){
-      const roomRef = ref(db, 'rooms/' + roomId + '/clients/' + clientId);
-      remove(roomRef).catch(()=>{});
-    }
-  });
-</script>
+    window.joinRoom = joinRoom;
+  </script>
 </body>
-
 </html>
