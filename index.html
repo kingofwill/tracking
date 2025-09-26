@@ -13,7 +13,12 @@ body, html { margin:0; padding:0; height:100%; font-family:sans-serif; }
   background:white; padding:10px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.3);
   z-index:9999; text-align:center;
 }
-input, select, button { margin:4px; padding:6px; font-size:14px; }
+input, select, button {
+  margin:4px; padding:10px; font-size:16px; border-radius:6px; border:1px solid #ccc;
+}
+button { cursor:pointer; }
+#cancelBtn { background-color:#e74c3c; color:white; font-weight:bold; }
+#cancelBtn:hover { background-color:#c0392b; }
 </style>
 </head>
 <body>
@@ -26,6 +31,7 @@ input, select, button { margin:4px; padding:6px; font-size:14px; }
   <br>
   <select id="friendSelect"></select>
   <button onclick="showRoute()">Chỉ đường</button>
+  <button id="cancelBtn" onclick="cancelRoute()">Hủy chỉ đường</button>
 </div>
 
 <div id="map"></div>
@@ -142,6 +148,14 @@ function showRoute(){
   }).catch(err=>{
     console.error(err); alert("Lỗi khi lấy route");
   });
+}
+
+// Hủy tuyến đường hiện tại
+function cancelRoute(){
+  if(routeLine){
+    map.removeLayer(routeLine);
+    routeLine = null;
+  }
 }
 </script>
 </body>
