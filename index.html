@@ -49,7 +49,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// Map chuẩn OSM
+// Map OSM chuẩn
 const map = L.map('map').setView([16.0471,108.2068],6);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '' }).addTo(map);
 
@@ -59,17 +59,15 @@ let markers = {};
 let routeLine;
 let currentFriend = null;
 const roomId = 'default-room';
+let lastRouteUpdate = 0; 
+const ROUTE_UPDATE_INTERVAL = 3000; // 3 giây
 
-// Join room
 function join(){
   myName = document.getElementById('deviceName').value.trim();
   if(!myName){ alert("Nhập tên thiết bị!"); return; }
 
-  // deviceId duy nhất trên client
   deviceId = 'device_' + Math.random().toString(36).substr(2,9);
   userRef = db.ref(`rooms/${roomId}/${deviceId}`);
-
-  // Thiết lập xóa tự động khi mất kết nối
   userRef.onDisconnect().remove();
 
   document.getElementById('controls').classList.add('minimized');
@@ -81,14 +79,19 @@ function join(){
       userRef.set({name:myName,lat,lng,timestamp:Date.now()});
 
       if(!myMarker){
-        myMarker = L.marker([lat,lng],{title:"Tôi", icon:L.icon({iconUrl:'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',iconSize:[32,32]})})
-                    .addTo(map).bindPopup("Tôi").openPopup();
+        myMarker = L.marker([lat,lng],{title:"Tôi",
+          icon:L.icon({iconUrl:'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',iconSize:[32,32]})
+        }).addTo(map).bindPopup("Tôi").openPopup();
+        map.setView([lat,lng],16); // chỉ set lần đầu
       } else {
         myMarker.setLatLng([lat,lng]);
       }
 
-      map.setView([lat,lng]);
-      if(currentFriend) showRouteToMarker(currentFriend);
+      // Cập nhật tuyến đường mỗi 3 giây
+      if(currentFriend && Date.now() - lastRouteUpdate > ROUTE_UPDATE_INTERVAL){
+        showRouteToMarker(currentFriend);
+        lastRouteUpdate = Date.now();
+      }
 
     }, err=>console.error(err), {enableHighAccuracy:true});
   }
@@ -100,9 +103,8 @@ function join(){
   });
 }
 
-// Cập nhật marker
 function updateMarkers(devices){
-  // Xóa marker không còn trong DB
+  // Xóa marker không còn
   for(const id in markers){
     if(!devices[id]){
       map.removeLayer(markers[id]);
@@ -125,7 +127,6 @@ function updateMarkers(devices){
   }
 }
 
-// Vẽ tuyến đường
 function showRouteToMarker(friendMarker){
   if(!myMarker) return;
   const from = myMarker.getLatLng();
@@ -145,10 +146,9 @@ function showRouteToMarker(friendMarker){
       const km = (info.distance/1000).toFixed(1);
       const min = Math.ceil(info.duration/60);
       friendMarker.bindPopup(`${friendMarker.options.title}<br>Khoảng cách: ${km} km<br>Thời gian: ${min} phút`).openPopup();
-    }).catch(err=>{console.error(err); alert("Lỗi khi lấy route");});
+    }).catch(err=>{console.error(err);});
 }
 
-// Hủy tuyến đường
 function cancelRoute(){
   if(routeLine){
     map.removeLayer(routeLine);
