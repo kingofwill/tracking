@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Realtime 2-device Location Tracker</title>
   <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-sA+e2Y8f1kzWm8v+gynKQX1qz8b+Vx3sZc+3zYx0z6k=" crossorigin=""/>
+  <!-- Đúng, không có integrity -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     html,body,#map { height: 100%; margin: 0; padding: 0; }
     #controls { position: absolute; top: 8px; left: 8px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 8px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
@@ -196,4 +198,5 @@
   });
 </script>
 </body>
+
 </html>
