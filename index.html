@@ -76,7 +76,10 @@
           L.latLng(myLat, myLon),
           L.latLng(friendLat, friendLon)
         ],
-        routeWhileDragging: false
+        routeWhileDragging: false,
+        router: new L.Routing.OSRMv1({
+        serviceUrl: 'https://router.project-osrm.org/route/v1'
+        })
       }).addTo(map);
     }
 
@@ -144,3 +147,4 @@
   </script>
 </body>
 </html>
+
