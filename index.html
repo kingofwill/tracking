@@ -2,162 +2,165 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <title>Bản đồ bạn bè</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tracking App</title>
   <style>
-    #map {
-      height: 100vh;
-      width: 100%;
+    body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+    #map { height: 100%; width: 100%; }
+    #controls {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      z-index: 9999; text-align: center;
     }
-    #friendList {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: white;
-      padding: 10px;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-      z-index: 999;
-    }
-    #friendList label {
-      display: block;
-      margin: 5px 0;
-    }
+    input, select, button { margin: 4px; padding: 6px; font-size: 14px; }
   </style>
-  <script type="module">
-    // Import Firebase
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+</head>
+<body>
+  <div id="controls">
+    <div id="joinForm">
+      <input type="text" id="deviceId" placeholder="Device ID">
+      <input type="text" id="deviceName" placeholder="Tên thiết bị">
+      <button onclick="join()">Join</button>
+    </div>
+    <div id="mapControls" style="display:none;">
+      <select id="friendSelect"></select>
+      <button onclick="toggleRoute()">Chỉ đường</button>
+    </div>
+  </div>
+  <div id="map"></div>
 
-    // Config Firebase
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-database-compat.js"></script>
+
+  <script>
+    // Firebase config
     const firebaseConfig = {
-      apiKey: "AIzaSyDUn14JJgslNJ7dQykUVvbgvlNTs7ynCkc",
-      authDomain: "your-app.firebaseapp.com",
-      databaseURL: "https://your-app.firebaseio.com",
-      projectId: "your-app",
-      storageBucket: "your-app.appspot.com",
-      messagingSenderId: "123456789",
-      appId: "1:123456789:web:abc123"
+      apiKey: "AIzaSyCn1K76GDbRiXN6_n3yNBgzvb6taUXGOVM",
+      authDomain: "tracking-bb8db.firebaseapp.com",
+      databaseURL: "https://tracking-bb8db-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "tracking-bb8db",
+      storageBucket: "tracking-bb8db.appspot.com",
+      messagingSenderId: "376993985667",
+      appId: "1:376993985667:web:bb7dfb60f76c9ba5f8d7b6",
     };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
+    // Biến toàn cục
     let map, directionsService, directionsRenderer;
-    let userMarker = null;
-    let friendMarkers = {};
-    let selectedFriend = null;
+    let myId = null, myName = null;
+    let myMarker = null;
+    let markers = {};
+    let showingRoute = false;
 
-    // Cập nhật danh sách bạn bè
-    function updateFriendList(friends) {
-      const listDiv = document.getElementById("friendList");
-      listDiv.innerHTML = "<strong>Chọn bạn để chỉ đường:</strong>";
-
-      Object.keys(friends).forEach(friendId => {
-        const info = friends[friendId];
-        const label = info.name || "Chưa đặt tên";
-
-        const input = document.createElement("input");
-        input.type = "radio";
-        input.name = "friend";
-        input.value = friendId;
-
-        input.addEventListener("change", () => {
-          selectedFriend = friendId;
-          calculateRoute();
-        });
-
-        const labelTag = document.createElement("label");
-        labelTag.appendChild(input);
-        labelTag.appendChild(document.createTextNode(" " + label));
-
-        listDiv.appendChild(labelTag);
-      });
-    }
-
-    // Tính đường đi ngắn nhất
-    function calculateRoute() {
-      if (!selectedFriend || !userMarker) return;
-
-      const friendPos = friendMarkers[selectedFriend]?.position;
-      const userPos = userMarker.position;
-
-      if (!friendPos) return;
-
-      directionsService.route(
-        {
-          origin: userPos,
-          destination: friendPos,
-          travelMode: google.maps.TravelMode.DRIVING,
-        },
-        (result, status) => {
-          if (status === "OK") {
-            directionsRenderer.setDirections(result);
-          } else {
-            alert("Không thể tìm đường: " + status);
-          }
-        }
-      );
-    }
-
-    // Hàm load bản đồ
+    // Khởi tạo Google Map
     window.initMap = function () {
       map = new google.maps.Map(document.getElementById("map"), {
-        center: { lat: 16.0471, lng: 108.2068 },
-        zoom: 13,
+        center: { lat: 16.0471, lng: 108.2068 }, zoom: 13
       });
-
       directionsService = new google.maps.DirectionsService();
-      directionsRenderer = new google.maps.DirectionsRenderer({ suppressMarkers: true });
+      directionsRenderer = new google.maps.DirectionsRenderer({ suppressMarkers: false });
       directionsRenderer.setMap(map);
+    };
 
-      // Vị trí của bạn
+    // Join app
+    function join() {
+      myId = document.getElementById("deviceId").value.trim();
+      myName = document.getElementById("deviceName").value.trim();
+      if (!myId || !myName) { alert("Nhập Device ID và Tên!"); return; }
+
+      document.getElementById("joinForm").style.display = "none";
+      document.getElementById("mapControls").style.display = "block";
+
+      // Update vị trí liên tục
       if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(pos => {
-          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-
-          userMarker = new google.maps.marker.AdvancedMarkerElement({
-            map,
-            position: loc,
-            title: "Bạn",
-          });
-
-          map.setCenter(loc);
+        navigator.geolocation.watchPosition(pos => {
+          const lat = pos.coords.latitude, lng = pos.coords.longitude;
+          const ref = db.ref("devices/" + myId);
+          ref.set({ name: myName, lat, lng, timestamp: Date.now() });
         });
       }
 
-      // Theo dõi bạn bè trên Firebase
-      const friendsRef = ref(db, "friends");
-      onValue(friendsRef, snapshot => {
-        const friends = snapshot.val() || {};
-        updateFriendList(friends);
-
-        // Xóa marker cũ
-        Object.values(friendMarkers).forEach(m => m.map = null);
-        friendMarkers = {};
-
-        // Tạo marker mới
-        Object.keys(friends).forEach(friendId => {
-          const info = friends[friendId];
-          if (!info.lat || !info.lng) return;
-
-          const marker = new google.maps.marker.AdvancedMarkerElement({
-            map,
-            position: { lat: info.lat, lng: info.lng },
-            title: info.name || "Bạn bè"
-          });
-
-          friendMarkers[friendId] = marker;
-        });
-
-        // Nếu đã chọn bạn thì tính lại route
-        if (selectedFriend) calculateRoute();
+      // Lắng nghe danh sách devices
+      db.ref("devices").on("value", snap => {
+        const devices = snap.val() || {};
+        updateMarkers(devices);
       });
-    };
+
+      // Xóa khỏi DB khi thoát
+      window.addEventListener("beforeunload", () => {
+        db.ref("devices/" + myId).remove();
+      });
+    }
+
+    // Cập nhật marker trên map
+    function updateMarkers(devices) {
+      const friendSelect = document.getElementById("friendSelect");
+      friendSelect.innerHTML = "<option value=''>--Chọn bạn--</option>";
+
+      for (const id in devices) {
+        const { name, lat, lng } = devices[id];
+        if (!lat || !lng) continue;
+
+        if (id === myId) {
+          if (!myMarker) {
+            myMarker = new google.maps.Marker({
+              map, position: { lat, lng }, label: "Tôi", icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+            });
+          } else {
+            myMarker.setPosition({ lat, lng });
+          }
+          map.setCenter({ lat, lng });
+        } else {
+          if (!markers[id]) {
+            markers[id] = new google.maps.Marker({
+              map, position: { lat, lng }, label: name, icon: "http://maps.google.com/mapfiles/ms/icons/red-dot.png"
+            });
+          } else {
+            markers[id].setPosition({ lat, lng });
+          }
+          friendSelect.innerHTML += `<option value="${id}">${name}</option>`;
+        }
+      }
+
+      // Xóa marker khi device không còn
+      for (const id in markers) {
+        if (!devices[id]) {
+          markers[id].setMap(null);
+          delete markers[id];
+        }
+      }
+    }
+
+    // Toggle hiển thị tuyến đường
+    function toggleRoute() {
+      if (showingRoute) {
+        directionsRenderer.setDirections({ routes: [] });
+        showingRoute = false;
+        return;
+      }
+      const friendId = document.getElementById("friendSelect").value;
+      if (!friendId || !markers[friendId] || !myMarker) {
+        alert("Chọn một người bạn để chỉ đường!"); return;
+      }
+      const origin = myMarker.getPosition();
+      const destination = markers[friendId].getPosition();
+
+      directionsService.route({
+        origin, destination, travelMode: google.maps.TravelMode.DRIVING
+      }, (result, status) => {
+        if (status === "OK") {
+          directionsRenderer.setDirections(result);
+          showingRoute = true;
+        } else {
+          alert("Không tìm được đường: " + status);
+        }
+      });
+    }
   </script>
-</head>
-<body>
-  <div id="friendList"></div>
-  <div id="map"></div>
+
+  <!-- Google Maps -->
   <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDUn14JJgslNJ7dQykUVvbgvlNTs7ynCkc&callback=initMap"></script>
 </body>
 </html>
