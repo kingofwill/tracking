@@ -17,6 +17,7 @@
 <body>
   <div id="controls">
     <input id="room" placeholder="Enter Room ID"/>
+    <input id="deviceName" placeholder="Your Name"/>
     <button onclick="joinRoom()">Join</button>
     <button onclick="toggleRoute()">Chỉ đường</button>
   </div>
@@ -50,6 +51,7 @@
     const otherIcon = L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/149/149059.png", iconSize: [32,32] });
 
     let myId = "device-" + Math.random().toString(36).substr(2,9);
+    let myName = "";
     let roomId = null;
     let markers = {};
     let routeControl = null;
@@ -58,6 +60,7 @@
 
     function joinRoom() {
       roomId = document.getElementById('room').value;
+      myName = document.getElementById('deviceName').value || "Unknown";
       if (!roomId) return alert("Enter a room ID");
 
       const myRef = ref(db, 'rooms/' + roomId + '/' + myId);
@@ -65,12 +68,12 @@
       // Xóa node khi disconnect
       onDisconnect(myRef).remove();
 
-      // Cập nhật vị trí
+      // Cập nhật vị trí liên tục
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(pos => {
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
-          set(myRef, { lat, lon });
+          set(myRef, { lat, lon, name: myName, lastActive: Date.now() });
         });
       } else {
         alert("Geolocation not supported");
@@ -82,9 +85,11 @@
         if (!data) return;
         latestData = data;
 
-        // Xóa marker không còn
+        const now = Date.now();
+
+        // Xóa marker không còn / quá hạn
         for (let id in markers) {
-          if (!data[id]) {
+          if (!data[id] || (now - (data[id].lastActive || 0) > 30000)) {
             map.removeLayer(markers[id]);
             delete markers[id];
           }
@@ -92,15 +97,18 @@
 
         // Cập nhật / thêm marker
         for (let deviceId in data) {
-          const { lat, lon } = data[deviceId];
+          const { lat, lon, name, lastActive } = data[deviceId];
           if (!lat || !lon) continue;
+          if (now - lastActive > 30000) continue; // quá hạn 30s
+
+          const label = deviceId === myId ? `You (${name})` : `Friend (${name})`;
 
           if (markers[deviceId]) {
-            markers[deviceId].setLatLng([lat, lon]);
+            markers[deviceId].setLatLng([lat, lon]).bindPopup(label);
           } else {
             markers[deviceId] = L.marker([lat, lon], { icon: deviceId === myId ? myIcon : otherIcon })
               .addTo(map)
-              .bindPopup(deviceId === myId ? "You" : "Friend");
+              .bindPopup(label);
           }
         }
 
