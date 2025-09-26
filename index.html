@@ -140,6 +140,15 @@
         if (!data) return;
         latestData = data;
 
+        // Xóa marker thừa
+        for (let id in markers) {
+          if (!data[id]) {
+            map.removeLayer(markers[id]);
+            delete markers[id];
+          }
+        }
+
+        // Cập nhật hoặc thêm marker
         for (let deviceId in data) {
           const { lat, lon } = data[deviceId];
           if (!lat || !lon) continue;
