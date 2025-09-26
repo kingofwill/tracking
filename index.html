@@ -2,56 +2,32 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Realtime Location Tracking with Routing</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tracking Demo</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css"/>
   <style>
-    body, html { margin: 0; padding: 0; height: 100%; width: 100%; }
+    body, html { margin:0; padding:0; height:100%; font-family:sans-serif; }
+    #controls { padding:10px; background:#f9f9f9; display:flex; gap:5px; flex-wrap:wrap; }
+    #controls input { flex:1; padding:8px; font-size:16px; }
+    #controls button { padding:8px 12px; font-size:16px; }
     #map { height: calc(100% - 60px); width: 100%; }
-    #controls {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px;
-      background: #f9f9f9;
-      border-bottom: 1px solid #ccc;
-    }
-    #controls input {
-      flex: 1;
-      padding: 8px;
-      font-size: 16px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-    }
-    #controls button {
-      padding: 8px 12px;
-      margin-left: 6px;
-      font-size: 16px;
-      border: none;
-      border-radius: 6px;
-      background: #007bff;
-      color: white;
-      cursor: pointer;
-    }
-    #controls button:active {
-      background: #0056b3;
-    }
   </style>
 </head>
 <body>
   <div id="controls">
-    <input id="room" placeholder="Room ID" />
+    <input id="room" placeholder="Enter Room ID"/>
     <button onclick="joinRoom()">Join</button>
     <button onclick="toggleRoute()">Chỉ đường</button>
   </div>
   <div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+    import { getDatabase, ref, set, onValue, onDisconnect } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCn1K76GDbRiXN6_n3yNBgzvb6taUXGOVM",
@@ -67,80 +43,46 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    let map = L.map('map').setView([0, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+    let map = L.map('map').setView([16.0471, 108.2068], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(map);
 
+    const myIcon = L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/64/64113.png", iconSize: [32,32] });
+    const otherIcon = L.icon({ iconUrl: "https://cdn-icons-png.flaticon.com/512/149/149059.png", iconSize: [32,32] });
+
+    let myId = "device-" + Math.random().toString(36).substr(2,9);
     let roomId = null;
-    let myId = Math.random().toString(36).substring(2, 9);
     let markers = {};
-    let routingControl = null;
-    let latestData = {};
+    let routeControl = null;
     let routeVisible = false;
-
-    // Icon cho mình
-    const myIcon = L.icon({
-      iconUrl: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
-      iconSize: [40, 40],
-      iconAnchor: [20, 40],
-      popupAnchor: [0, -40]
-    });
-
-    // Icon cho người khác
-    const otherIcon = L.icon({
-      iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
-      iconSize: [40, 40],
-      iconAnchor: [20, 40],
-      popupAnchor: [0, -40]
-    });
-
-    function showRoute(myLat, myLon, friendLat, friendLon) {
-      if (routingControl) {
-        map.removeControl(routingControl);
-      }
-      routingControl = L.Routing.control({
-        waypoints: [
-          L.latLng(myLat, myLon),
-          L.latLng(friendLat, friendLon)
-        ],
-        routeWhileDragging: false,
-        router: new L.Routing.OSRMv1({
-          serviceUrl: 'https://router.project-osrm.org/route/v1'
-        })
-      }).addTo(map);
-    }
-
-    function toggleRoute() {
-      routeVisible = !routeVisible;
-      if (!routeVisible) {
-        if (routingControl) {
-          map.removeControl(routingControl);
-          routingControl = null;
-        }
-        return;
-      }
-      if (latestData[myId]) {
-        for (let deviceId in latestData) {
-          if (deviceId !== myId) {
-            showRoute(latestData[myId].lat, latestData[myId].lon, latestData[deviceId].lat, latestData[deviceId].lon);
-            break;
-          }
-        }
-      }
-    }
+    let latestData = {};
 
     function joinRoom() {
       roomId = document.getElementById('room').value;
       if (!roomId) return alert("Enter a room ID");
 
-      // Lắng nghe dữ liệu từ Firebase
+      const myRef = ref(db, 'rooms/' + roomId + '/' + myId);
+
+      // Xóa node khi disconnect
+      onDisconnect(myRef).remove();
+
+      // Cập nhật vị trí
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(pos => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          set(myRef, { lat, lon });
+        });
+      } else {
+        alert("Geolocation not supported");
+      }
+
+      // Nghe dữ liệu phòng
       onValue(ref(db, 'rooms/' + roomId), snapshot => {
         const data = snapshot.val();
         if (!data) return;
         latestData = data;
 
-        // Xóa marker thừa
+        // Xóa marker không còn
         for (let id in markers) {
           if (!data[id]) {
             map.removeLayer(markers[id]);
@@ -148,7 +90,7 @@
           }
         }
 
-        // Cập nhật hoặc thêm marker
+        // Cập nhật / thêm marker
         for (let deviceId in data) {
           const { lat, lon } = data[deviceId];
           if (!lat || !lon) continue;
@@ -156,26 +98,44 @@
           if (markers[deviceId]) {
             markers[deviceId].setLatLng([lat, lon]);
           } else {
-            if (deviceId === myId) {
-              markers[deviceId] = L.marker([lat, lon], { icon: myIcon }).addTo(map).bindPopup("You");
-            } else {
-              markers[deviceId] = L.marker([lat, lon], { icon: otherIcon }).addTo(map).bindPopup("Friend");
-            }
+            markers[deviceId] = L.marker([lat, lon], { icon: deviceId === myId ? myIcon : otherIcon })
+              .addTo(map)
+              .bindPopup(deviceId === myId ? "You" : "Friend");
           }
         }
 
         if (routeVisible) toggleRoute();
       });
+    }
 
-      // Cập nhật vị trí bản thân
-      if (navigator.geolocation) {
-        navigator.geolocation.watchPosition(pos => {
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
-          set(ref(db, 'rooms/' + roomId + '/' + myId), { lat, lon });
-        });
+    function toggleRoute() {
+      if (routeControl) {
+        map.removeControl(routeControl);
+        routeControl = null;
+        routeVisible = false;
       } else {
-        alert("Geolocation not supported");
+        if (!roomId) return alert("Join a room first");
+
+        const friends = Object.keys(latestData).filter(id => id !== myId);
+        if (friends.length === 0) return alert("No friend found");
+
+        const me = latestData[myId];
+        const friend = latestData[friends[0]];
+        if (!me || !friend) return;
+
+        routeControl = L.Routing.control({
+          waypoints: [
+            L.latLng(me.lat, me.lon),
+            L.latLng(friend.lat, friend.lon)
+          ],
+          routeWhileDragging: true,
+          show: false,
+          addWaypoints: false,
+          createMarker: () => null,
+          router: L.Routing.osrmv1({ serviceUrl: "https://router.project-osrm.org/route/v1" })
+        }).addTo(map);
+
+        routeVisible = true;
       }
     }
 
