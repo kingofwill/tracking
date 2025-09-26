@@ -18,6 +18,7 @@
 <body>
   <div id="controls">
     <div id="joinForm">
+      <input type="text" id="roomId" placeholder="Room ID">
       <input type="text" id="deviceId" placeholder="Device ID">
       <input type="text" id="deviceName" placeholder="Tên thiết bị">
       <button onclick="join()">Join</button>
@@ -49,7 +50,7 @@
 
     // Biến toàn cục
     let map, directionsService, directionsRenderer;
-    let myId = null, myName = null;
+    let roomId = null, myId = null, myName = null;
     let myMarker = null;
     let markers = {};
     let showingRoute = false;
@@ -64,33 +65,35 @@
       directionsRenderer.setMap(map);
     };
 
-    // Join app
+    // Join room
     function join() {
+      roomId = document.getElementById("roomId").value.trim();
       myId = document.getElementById("deviceId").value.trim();
       myName = document.getElementById("deviceName").value.trim();
-      if (!myId || !myName) { alert("Nhập Device ID và Tên!"); return; }
+      if (!roomId || !myId || !myName) { alert("Nhập Room ID, Device ID và Tên!"); return; }
 
       document.getElementById("joinForm").style.display = "none";
       document.getElementById("mapControls").style.display = "block";
+
+      const ref = db.ref("rooms/" + roomId + "/" + myId);
 
       // Update vị trí liên tục
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(pos => {
           const lat = pos.coords.latitude, lng = pos.coords.longitude;
-          const ref = db.ref("devices/" + myId);
           ref.set({ name: myName, lat, lng, timestamp: Date.now() });
         });
       }
 
-      // Lắng nghe danh sách devices
-      db.ref("devices").on("value", snap => {
+      // Lắng nghe danh sách thiết bị trong room
+      db.ref("rooms/" + roomId).on("value", snap => {
         const devices = snap.val() || {};
         updateMarkers(devices);
       });
 
       // Xóa khỏi DB khi thoát
       window.addEventListener("beforeunload", () => {
-        db.ref("devices/" + myId).remove();
+        ref.remove();
       });
     }
 
