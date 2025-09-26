@@ -11,30 +11,30 @@ body, html { margin:0; padding:0; height:100%; font-family:sans-serif; }
 #controls {
   position:absolute; top:10px; left:50%; transform:translateX(-50%);
   background:white; padding:10px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.3);
-  z-index:9999; text-align:center;
+  z-index:9999; text-align:center; transition:all 0.3s;
 }
-input, button {
-  margin:4px; padding:10px; font-size:16px; border-radius:6px; border:1px solid #ccc;
-}
+#controls.minimized { padding:5px; font-size:12px; }
+input, button { margin:4px; padding:10px; font-size:16px; border-radius:6px; border:1px solid #ccc; }
 button { cursor:pointer; }
-#cancelBtn { background-color:#e74c3c; color:white; font-weight:bold; }
+#cancelBtn { background-color:#e74c3c; color:white; font-weight:bold; display:none; }
 #cancelBtn:hover { background-color:#c0392b; }
+#minimizeBtn { background-color:#3498db; color:white; font-weight:bold; }
+#minimizeBtn:hover { background-color:#2980b9; }
 </style>
 </head>
 <body>
 
 <div id="controls">
   <input type="text" id="roomId" placeholder="Room ID">
-  <input type="text" id="deviceId" placeholder="Device ID">
   <input type="text" id="deviceName" placeholder="Tên thiết bị">
   <button onclick="join()">Join</button>
   <br>
   <button id="cancelBtn" onclick="cancelRoute()">Hủy chỉ đường</button>
+  <button id="minimizeBtn" onclick="toggleMinimize()">Thu nhỏ/Phóng to form</button>
 </div>
 
 <div id="map"></div>
 
-<!-- Leaflet + Firebase -->
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-database-compat.js"></script>
@@ -59,20 +59,18 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
 
-// Biến
-let roomId, myId, myName;
+let roomId, myName;
 let myMarker;
 let markers = {};
 let routeLine;
 
-// Join room + cập nhật vị trí
+// Join room
 function join() {
   roomId = document.getElementById('roomId').value.trim();
-  myId = document.getElementById('deviceId').value.trim();
   myName = document.getElementById('deviceName').value.trim();
-  if(!roomId||!myId||!myName){ alert("Nhập đầy đủ thông tin!"); return; }
+  if(!roomId||!myName){ alert("Nhập Room ID và Tên thiết bị!"); return; }
 
-  const ref = db.ref('rooms/'+roomId+'/'+myId);
+  const ref = db.ref('rooms/'+roomId+'/'+myName);
 
   if(navigator.geolocation){
     navigator.geolocation.watchPosition(pos=>{
@@ -82,26 +80,23 @@ function join() {
       if(!myMarker){
         myMarker = L.marker([lat,lng],{title:"Tôi", icon:L.icon({iconUrl:'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',iconSize:[32,32]})})
                     .addTo(map).bindPopup("Tôi").openPopup();
-      }else{
+      } else {
         myMarker.setLatLng([lat,lng]);
       }
       map.setView([lat,lng]);
     }, err=>{console.error(err);},{enableHighAccuracy:true});
   }
 
-  // Lắng nghe tất cả device trong room
   db.ref('rooms/'+roomId).on('value',snap=>{
     const devices = snap.val()||{};
     updateMarkers(devices);
   });
 
-  // Xóa khi thoát
   window.addEventListener('beforeunload',()=>{ ref.remove(); });
 }
 
 // Cập nhật marker
 function updateMarkers(devices){
-  // Xóa marker cũ
   for(const id in markers){
     map.removeLayer(markers[id]);
   }
@@ -110,22 +105,20 @@ function updateMarkers(devices){
   for(const id in devices){
     const {name,lat,lng}=devices[id];
     if(!lat||!lng) continue;
-    if(id===myId) continue;
+    if(id===myName) continue;
 
     const m = L.marker([lat,lng],{title:name})
                 .addTo(map)
                 .bindPopup(name);
 
-    // Bấm vào marker để chỉ đường
     m.on('click',()=>{ showRouteToMarker(m); });
     markers[id] = m;
   }
 }
 
-// Vẽ tuyến đường đến marker
+// Vẽ tuyến đường
 function showRouteToMarker(friendMarker){
   if(!myMarker) return alert("Chưa xác định vị trí của bạn!");
-
   const from = myMarker.getLatLng();
   const to = friendMarker.getLatLng();
 
@@ -137,17 +130,33 @@ function showRouteToMarker(friendMarker){
     const coords = data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
     routeLine = L.polyline(coords,{color:'blue',weight:5}).addTo(map);
     map.fitBounds(routeLine.getBounds());
+
+    // Hiện nút hủy khi đang chỉ đường
+    document.getElementById('cancelBtn').style.display='inline-block';
+
+    // Hiển thị khoảng cách & thời gian
+    const info = data.routes[0].legs[0];
+    const km = (info.distance/1000).toFixed(1);
+    const min = Math.ceil(info.duration/60);
+    friendMarker.bindPopup(`${friendMarker.options.title}<br>Khoảng cách: ${km} km<br>Thời gian: ${min} phút`).openPopup();
   }).catch(err=>{
     console.error(err); alert("Lỗi khi lấy route");
   });
 }
 
-// Hủy tuyến đường hiện tại
+// Hủy tuyến đường
 function cancelRoute(){
   if(routeLine){
     map.removeLayer(routeLine);
     routeLine = null;
+    document.getElementById('cancelBtn').style.display='none';
   }
+}
+
+// Thu nhỏ / phóng to form
+function toggleMinimize(){
+  const ctrl = document.getElementById('controls');
+  ctrl.classList.toggle('minimized');
 }
 </script>
 </body>
