@@ -28,7 +28,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getDatabase, ref, set, onValue, onDisconnect } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+    import { getDatabase, ref, set, onValue, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCn1K76GDbRiXN6_n3yNBgzvb6taUXGOVM",
@@ -65,6 +65,9 @@
 
       const myRef = ref(db, 'rooms/' + roomId + '/' + myId);
 
+      // Ghi dữ liệu ngay khi join để đảm bảo có name
+      set(myRef, { lat: 0, lon: 0, name: myName, lastActive: Date.now() });
+
       // Xóa node khi disconnect
       onDisconnect(myRef).remove();
 
@@ -84,22 +87,23 @@
         const data = snapshot.val();
         if (!data) return;
         latestData = data;
-
         const now = Date.now();
 
-        // Xóa marker không còn / quá hạn
-        for (let id in markers) {
-          if (!data[id] || (now - (data[id].lastActive || 0) > 30000)) {
-            map.removeLayer(markers[id]);
-            delete markers[id];
-          }
-        }
-
-        // Cập nhật / thêm marker
+        // Xử lý từng thiết bị
         for (let deviceId in data) {
-          const { lat, lon, name, lastActive } = data[deviceId];
+          const { lat, lon, name, lastActive } = data[deviceId] || {};
+          if (!name) continue; // bỏ nếu không có tên
           if (!lat || !lon) continue;
-          if (now - lastActive > 30000) continue; // quá hạn 30s
+
+          // Nếu offline >30s → xoá khỏi DB & map
+          if (now - lastActive > 30000) {
+            remove(ref(db, 'rooms/' + roomId + '/' + deviceId));
+            if (markers[deviceId]) {
+              map.removeLayer(markers[deviceId]);
+              delete markers[deviceId];
+            }
+            continue;
+          }
 
           const label = deviceId === myId ? `You (${name})` : `Friend (${name})`;
 
@@ -111,8 +115,6 @@
               .bindPopup(label);
           }
         }
-
-        if (routeVisible) toggleRoute();
       });
     }
 
